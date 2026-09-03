@@ -166,7 +166,6 @@ function sanitizeTeacherData(data: Partial<Teacher>) {
         _type: 'reference',
         _ref: data.photo.asset._ref,
       },
-      hotspot: true,
     };
   } else if (data.photo === null) {
     payload.photo = null;
