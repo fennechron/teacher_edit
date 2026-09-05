@@ -90,7 +90,7 @@ export default function FacultyEditor({
             disabled={isSaving || isLoadingDetails}
           >
             {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            <span>{isSaving ? 'Saving...' : 'Save Profile'}</span>
+            <span>{isSaving ? 'Saving...' : isNew ? 'Add Faculty' : 'Save Profile'}</span>
           </button>
         </div>
       </div>
@@ -420,7 +420,7 @@ export default function FacultyEditor({
             disabled={isSaving || isLoadingDetails}
           >
             {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            <span>{isSaving ? 'Saving...' : 'Save Profile'}</span>
+            <span>{isSaving ? 'Saving...' : isNew ? 'Add Faculty' : 'Save Profile'}</span>
           </button>
         </div>
       </div>

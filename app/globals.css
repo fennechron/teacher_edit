@@ -510,6 +510,11 @@ textarea.form-control {
   .app-header {
     padding: 0 1rem;
   }
+  .brand-subtitle,
+  .status-text,
+  .btn-text-hide-mobile {
+    display: none !important;
+  }
   .app-workspace {
     position: relative;
   }

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import FacultyList from '@/components/FacultyList';
 import FacultyEditor from '@/components/FacultyEditor';
@@ -8,6 +9,7 @@ import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 import { Teacher, Department } from '@/lib/types';
 
 export default function Home() {
+  const router = useRouter();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
@@ -73,52 +75,30 @@ export default function Home() {
       const data = await res.json();
       if (Array.isArray(data)) {
         setTeachers(data);
-        // If nothing selected and teachers exist, select the first one
-        if (!selectedTeacherId && data.length > 0) {
-          setSelectedTeacherId(data[0]._id || null);
-          setCurrentTeacher(data[0]);
-        }
       }
+      return data;
     } catch (err: any) {
       showToast(`Failed to load teachers: ${err.message}`, 'error');
+      return null;
     } finally {
       setIsLoadingTeachers(false);
     }
-  }, [selectedTeacherId]);
+  }, []);
 
   useEffect(() => {
     loadStatus();
     loadDepartments();
-    loadTeachers();
+    loadTeachers().then((data) => {
+      if (data && data.length > 0) {
+        setSelectedTeacherId(data[0]._id || null);
+        setCurrentTeacher(data[0]);
+      }
+    });
   }, [loadStatus, loadDepartments, loadTeachers]);
 
   // Select Teacher
   const handleSelectTeacher = async (id: string | null) => {
-    if (!id) {
-      // New Teacher
-      setSelectedTeacherId(null);
-      setCurrentTeacher({
-        name: '',
-        isHOD: false,
-        designation: '',
-        specialization: '',
-        qualification: [],
-        experience: [],
-        about: [],
-        courses_handled: [],
-        fields_of_expertise: [],
-        research: [],
-        publications: [],
-        awards_and_honours: [],
-        positions_handled: [],
-        industry_interaction: [],
-        patents: [],
-        books_published: [],
-        other_details: [],
-      });
-      setMobileViewEditor(true);
-      return;
-    }
+    if (!id) return;
 
     setSelectedTeacherId(id);
     setMobileViewEditor(true);
@@ -215,7 +195,7 @@ export default function Home() {
       {/* Top Header */}
       <Header
         status={status}
-        onNewTeacher={() => handleSelectTeacher(null)}
+        onNewTeacher={() => router.push('/teacher/new')}
       />
 
       {/* Main Split-Pane Workspace */}

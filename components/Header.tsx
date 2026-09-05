@@ -5,12 +5,14 @@ import { GraduationCap, Sun, Moon, Plus } from 'lucide-react';
 
 interface HeaderProps {
   status: { connected: boolean; isLive?: boolean; projectId?: string; dataset?: string };
-  onNewTeacher: () => void;
+  onNewTeacher?: () => void;
+  showAddButton?: boolean;
 }
 
 export default function Header({
   status,
   onNewTeacher,
+  showAddButton = true,
 }: HeaderProps) {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
@@ -64,7 +66,7 @@ export default function Header({
               display: 'inline-block',
             }}
           />
-          <span>
+          <span className="status-text">
             {status.connected
               ? `Sanity: ${status.projectId || 'Connected'}`
               : 'Demo / Setup'}
@@ -81,16 +83,18 @@ export default function Header({
           {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
         </button>
 
-        {/* Add Faculty (Commented out per user request) */}
-        {/* <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          onClick={onNewTeacher}
-          style={{ fontWeight: 600 }}
-        >
-          <Plus size={16} />
-          <span>+ Add Faculty</span>
-        </button> */}
+        {/* Add Faculty */}
+        {showAddButton && (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={onNewTeacher}
+            style={{ fontWeight: 600 }}
+          >
+            <Plus size={16} />
+            <span className="btn-text-hide-mobile">Add Faculty</span>
+          </button>
+        )}
       </div>
     </header>
   );
