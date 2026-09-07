@@ -67,6 +67,7 @@ export default function FacultyEditor({
           <p className="editor-subtext">
             {teacher.designation || 'Faculty Member'}
             {teacher.departmentData?.name ? ` • ${teacher.departmentData.name}` : ''}
+            {(teacher.idx || teacher.orderIndex) ? ` • Position #${teacher.idx ?? teacher.orderIndex}` : ''}
           </p>
         </div>
 
@@ -183,6 +184,62 @@ export default function FacultyEditor({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div
+                className="form-group"
+                style={{
+                  backgroundColor: 'var(--bg-surface-elevated)',
+                  padding: '0.85rem 1rem',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <label htmlFor="teacher-idx" className="form-label" style={{ fontWeight: 700, margin: 0 }}>
+                    Display Position in Department (<code>idx</code>)
+                  </label>
+                  {(teacher.idx || teacher.orderIndex) && (
+                    <span
+                      style={{
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        backgroundColor: 'var(--primary-light)',
+                        color: 'var(--primary)',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                      }}
+                    >
+                      Current: #{teacher.idx ?? teacher.orderIndex}
+                    </span>
+                  )}
+                </div>
+                <p style={{ fontSize: '0.775rem', color: 'var(--text-muted)', margin: '0 0 0.5rem 0', lineHeight: 1.4 }}>
+                  Specifies which position this faculty appears on the actual college website (1 = First).
+                  Specifying or changing this position automatically shifts other faculties in this department.
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <input
+                    id="teacher-idx"
+                    type="number"
+                    min={1}
+                    className="form-control"
+                    placeholder="Auto (next)"
+                    value={teacher.idx ?? teacher.orderIndex ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const val = raw === '' ? undefined : parseInt(raw, 10);
+                      onUpdateField('idx', val);
+                      onUpdateField('orderIndex', val);
+                    }}
+                    style={{ maxWidth: '140px', fontWeight: 700 }}
+                  />
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    {isNew
+                      ? 'Leave blank to automatically add at the end of the department.'
+                      : 'Setting a new number auto-shifts existing members.'}
+                  </span>
+                </div>
               </div>
 
               <div className="form-row-2">

@@ -113,11 +113,23 @@ export default function FacultyList({
       </div>
 
       {/* Stats bar */}
-      <div className="sidebar-stats">
-        <span>Faculty Directory</span>
-        <span>
-          {filteredTeachers.length} {filteredTeachers.length === 1 ? 'member' : 'members'}
-        </span>
+      <div className="sidebar-stats" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span>Faculty Directory ({filteredTeachers.length})</span>
+        <a
+          href="/teacher/order"
+          style={{
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            color: 'var(--primary)',
+            textDecoration: 'none',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '3px',
+          }}
+          title="Reorder faculties by department"
+        >
+          Reorder ↗
+        </a>
       </div>
 
       {/* Teachers List Cards */}
@@ -204,6 +216,23 @@ export default function FacultyList({
                     >
                       {teacher.name || 'Unnamed Faculty'}
                     </span>
+                    {(teacher.idx || teacher.orderIndex) && (
+                      <span
+                        style={{
+                          fontSize: '0.65rem',
+                          fontWeight: 800,
+                          backgroundColor: isSelected ? 'var(--primary)' : 'var(--bg-surface-elevated)',
+                          color: isSelected ? '#ffffff' : 'var(--text-secondary)',
+                          border: `1px solid ${isSelected ? 'transparent' : 'var(--border-subtle)'}`,
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          flexShrink: 0,
+                        }}
+                        title={`Display Position: #${teacher.idx ?? teacher.orderIndex}`}
+                      >
+                        #{teacher.idx ?? teacher.orderIndex}
+                      </span>
+                    )}
                     {teacher.isHOD && (
                       <span
                         style={{

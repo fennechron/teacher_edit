@@ -83,6 +83,18 @@ export default function Header({
           {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
         </button>
 
+        {/* Reorder Teachers */}
+        {showAddButton && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => window.location.href = '/teacher/order'}
+            style={{ fontWeight: 600, marginRight: '0.25rem' }}
+          >
+            <span className="btn-text-hide-mobile">Reorder</span>
+          </button>
+        )}
+
         {/* Add Faculty */}
         {showAddButton && (
           <button

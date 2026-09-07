@@ -1,5 +1,5 @@
 import { createClient, SanityClient } from '@sanity/client';
-import { Teacher, Department, Publication } from './types';
+import { Teacher, Department, Publication, getFacultyRoleRank } from './types';
 
 let config = {
   projectId: process.env.SANITY_PROJECT_ID || 'q1p97j9m',
@@ -95,14 +95,14 @@ export async function fetchTeachers(search?: string): Promise<Teacher[]> {
       ...,
       "departmentData": department->{_id, name, title, short},
       "photoUrl": photo.asset->url
-    } | order(name asc)`;
+    } | order(coalesce(idx, orderIndex, 999999) asc, name asc)`;
     params = { q: `*${search}*` };
   } else {
     groq = `*[_type == "teacher"]{
       ...,
       "departmentData": department->{_id, name, title, short},
       "photoUrl": photo.asset->url
-    } | order(name asc)`;
+    } | order(coalesce(idx, orderIndex, 999999) asc, name asc)`;
   }
 
   return await client.fetch(groq, params);
@@ -147,6 +147,17 @@ function sanitizeTeacherData(data: Partial<Teacher>) {
     other_details: cleanArr(data.other_details),
   };
 
+  // Handle idx (display order index)
+  if (data.idx !== undefined && data.idx !== null && !isNaN(Number(data.idx))) {
+    const cleanIdx = Math.max(1, Math.round(Number(data.idx)));
+    payload.idx = cleanIdx;
+    payload.orderIndex = cleanIdx;
+  } else if (data.orderIndex !== undefined && data.orderIndex !== null && !isNaN(Number(data.orderIndex))) {
+    const cleanIdx = Math.max(1, Math.round(Number(data.orderIndex)));
+    payload.idx = cleanIdx;
+    payload.orderIndex = cleanIdx;
+  }
+
   // Handle department reference
   if (data.department) {
     if (typeof data.department === 'string') {
@@ -188,13 +199,162 @@ function sanitizeTeacherData(data: Partial<Teacher>) {
   return payload;
 }
 
+export async function normalizeDepartmentIndices(deptRef: string) {
+  const client = getClient();
+  if (!client || !config.token || !deptRef) return;
+
+  try {
+    const groq = `*[_type == "teacher" && department._ref == $deptRef]{
+      _id,
+      name,
+      designation,
+      isHOD,
+      idx,
+      orderIndex
+    }`;
+
+    const teachers: Array<{ _id: string; name: string; designation?: string; isHOD?: boolean; idx?: number; orderIndex?: number }> =
+      await client.fetch(groq, { deptRef });
+
+    teachers.sort((a, b) => {
+      const idxA = a.idx ?? a.orderIndex ?? 999999;
+      const idxB = b.idx ?? b.orderIndex ?? 999999;
+      if (idxA !== idxB) return idxA - idxB;
+      const rankA = getFacultyRoleRank(a);
+      const rankB = getFacultyRoleRank(b);
+      if (rankA !== rankB) return rankA - rankB;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+    const transaction = client.transaction();
+    let hasChanges = false;
+
+    teachers.forEach((t, index) => {
+      const properIdx = index + 1;
+      if (t.idx !== properIdx || t.orderIndex !== properIdx) {
+        transaction.patch(t._id, (p) => p.set({ idx: properIdx, orderIndex: properIdx }));
+        hasChanges = true;
+      }
+    });
+
+    if (hasChanges) {
+      await transaction.commit();
+    }
+  } catch (err) {
+    console.error('Failed to normalize department indices:', err);
+  }
+}
+
+export async function reorderDepartmentTeachersWithTarget(
+  deptRef: string,
+  teacherIdToInsertOrMove: string | null,
+  targetIdx: number
+) {
+  const client = getClient();
+  if (!client || !config.token || !deptRef) return;
+
+  const groq = `*[_type == "teacher" && department._ref == $deptRef]{
+    _id,
+    name,
+    designation,
+    isHOD,
+    idx,
+    orderIndex
+  }`;
+
+  const deptTeachers: Array<{ _id: string; name: string; designation?: string; isHOD?: boolean; idx?: number; orderIndex?: number }> =
+    await client.fetch(groq, { deptRef });
+
+  deptTeachers.sort((a, b) => {
+    const idxA = a.idx ?? a.orderIndex ?? 999999;
+    const idxB = b.idx ?? b.orderIndex ?? 999999;
+    if (idxA !== idxB) return idxA - idxB;
+    const rankA = getFacultyRoleRank(a);
+    const rankB = getFacultyRoleRank(b);
+    if (rankA !== rankB) return rankA - rankB;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  // Separate the teacher being moved/inserted
+  const remaining = deptTeachers.filter((t) => t._id !== teacherIdToInsertOrMove);
+
+  // Clamp targetIdx to 1-based range: 1 to remaining.length + 1
+  const clampedIdx = Math.max(1, Math.min(Math.round(targetIdx), remaining.length + 1));
+  const insertIndex = clampedIdx - 1; // 0-based
+
+  // Construct new list with teacher at the target position
+  const newList: Array<{ _id: string }> = [];
+  for (let i = 0; i < remaining.length; i++) {
+    if (i === insertIndex && teacherIdToInsertOrMove) {
+      newList.push({ _id: teacherIdToInsertOrMove });
+    }
+    newList.push(remaining[i]);
+  }
+  if (newList.length < remaining.length + (teacherIdToInsertOrMove ? 1 : 0) && teacherIdToInsertOrMove) {
+    newList.push({ _id: teacherIdToInsertOrMove });
+  }
+
+  // Build transaction to update any teacher whose index changed
+  const transaction = client.transaction();
+  let changedCount = 0;
+
+  newList.forEach((item, index) => {
+    const newIdx = index + 1;
+    const prev = deptTeachers.find((t) => t._id === item._id);
+    if (!prev || prev.idx !== newIdx || prev.orderIndex !== newIdx) {
+      transaction.patch(item._id, (p) => p.set({ idx: newIdx, orderIndex: newIdx }));
+      changedCount++;
+    }
+  });
+
+  if (changedCount > 0) {
+    await transaction.commit();
+  }
+
+  return { clampedIdx, total: newList.length };
+}
+
 export async function createTeacher(data: Partial<Teacher>): Promise<Teacher> {
   const client = getClient();
   if (!client || !config.token) {
     throw new Error('Sanity API Token is required to create faculty members.');
   }
+
+  const deptRef =
+    typeof data.department === 'string'
+      ? data.department
+      : (data.department as any)?._ref;
+
+  if (deptRef) {
+    // Check existing teachers in department
+    const existing: Array<{ _id: string; idx?: number }> = await client.fetch(
+      `*[_type == "teacher" && department._ref == $deptRef]{_id, idx} | order(coalesce(idx, 999999) asc)`,
+      { deptRef }
+    );
+
+    let targetIdx: number;
+    if (data.idx !== undefined && data.idx !== null && !isNaN(Number(data.idx))) {
+      targetIdx = Math.max(1, Math.round(Number(data.idx)));
+    } else {
+      targetIdx = existing.length + 1;
+    }
+
+    // Clamp targetIdx to [1, existing.length + 1]
+    targetIdx = Math.min(targetIdx, existing.length + 1);
+    data.idx = targetIdx;
+    data.orderIndex = targetIdx;
+
+    const payload = sanitizeTeacherData(data);
+    const created = await client.create(payload);
+
+    // If inserted into middle or beginning, shift subsequent faculties
+    await reorderDepartmentTeachersWithTarget(deptRef, created._id, targetIdx);
+
+    return created as any as Teacher;
+  }
+
   const payload = sanitizeTeacherData(data);
-  return await client.create(payload);
+  return (await client.create(payload)) as any as Teacher;
 }
 
 export async function updateTeacher(id: string, data: Partial<Teacher>): Promise<Teacher> {
@@ -202,8 +362,50 @@ export async function updateTeacher(id: string, data: Partial<Teacher>): Promise
   if (!client || !config.token) {
     throw new Error('Sanity API Token is required to update faculty members.');
   }
+
+  const deptRef =
+    typeof data.department === 'string'
+      ? data.department
+      : (data.department as any)?._ref;
+
+  const currentDoc = await client.fetch(
+    `*[_type == "teacher" && _id == $id][0]{idx, orderIndex, department}`,
+    { id }
+  );
+  const prevDeptRef =
+    typeof currentDoc?.department === 'string'
+      ? currentDoc.department
+      : currentDoc?.department?._ref;
+
+  // If department is specified and idx is provided (or changed)
+  if (deptRef && data.idx !== undefined && data.idx !== null && !isNaN(Number(data.idx))) {
+    const targetIdx = Math.max(1, Math.round(Number(data.idx)));
+    data.idx = targetIdx;
+    data.orderIndex = targetIdx;
+
+    const payload = sanitizeTeacherData(data);
+    const updated = await client.patch(id).set(payload).commit();
+
+    await reorderDepartmentTeachersWithTarget(deptRef, id, targetIdx);
+
+    if (prevDeptRef && prevDeptRef !== deptRef) {
+      await normalizeDepartmentIndices(prevDeptRef);
+    }
+
+    return updated as any as Teacher;
+  }
+
+  // If department changed without specifying idx
+  if (deptRef && prevDeptRef && prevDeptRef !== deptRef) {
+    const payload = sanitizeTeacherData(data);
+    const updated = await client.patch(id).set(payload).commit();
+    await normalizeDepartmentIndices(deptRef);
+    await normalizeDepartmentIndices(prevDeptRef);
+    return updated as any as Teacher;
+  }
+
   const payload = sanitizeTeacherData(data);
-  return await client.patch(id).set(payload).commit();
+  return (await client.patch(id).set(payload).commit()) as any as Teacher;
 }
 
 export async function deleteTeacher(id: string) {
@@ -211,7 +413,23 @@ export async function deleteTeacher(id: string) {
   if (!client || !config.token) {
     throw new Error('Sanity API Token is required to delete faculty members.');
   }
-  return await client.delete(id);
+
+  const currentDoc = await client.fetch(
+    `*[_type == "teacher" && _id == $id][0]{department}`,
+    { id }
+  );
+  const deptRef =
+    typeof currentDoc?.department === 'string'
+      ? currentDoc.department
+      : currentDoc?.department?._ref;
+
+  const res = await client.delete(id);
+
+  if (deptRef) {
+    await normalizeDepartmentIndices(deptRef);
+  }
+
+  return res;
 }
 
 export async function uploadSanityImage(fileBuffer: Buffer, filename: string, contentType: string) {
@@ -228,4 +446,25 @@ export async function uploadSanityImage(fileBuffer: Buffer, filename: string, co
     url: asset.url,
     assetRef: asset._id,
   };
+}
+
+export async function updateTeacherOrder(updates: { id: string; idx?: number; orderIndex?: number }[]) {
+  const client = getClient();
+  if (!client || !config.token) {
+    throw new Error('Sanity API Token is required to update order.');
+  }
+
+  const transaction = client.transaction();
+  
+  updates.forEach(({ id, idx, orderIndex }) => {
+    const resolvedIdx = typeof idx === 'number' && !isNaN(idx)
+      ? Math.max(1, Math.round(idx))
+      : typeof orderIndex === 'number' && !isNaN(orderIndex)
+      ? Math.max(1, Math.round(orderIndex))
+      : 1;
+
+    transaction.patch(id, (p) => p.set({ idx: resolvedIdx, orderIndex: resolvedIdx }));
+  });
+
+  return await transaction.commit();
 }
